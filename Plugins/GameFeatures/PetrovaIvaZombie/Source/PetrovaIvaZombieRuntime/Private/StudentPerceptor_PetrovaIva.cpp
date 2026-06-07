@@ -35,7 +35,7 @@ void UStudentPerceptor_PetrovaIva::BeginPlay()
 
 	m_SurvivalStartTime = GetWorld()->GetTimeSeconds();
 
-	// Update the on-screen survival timer every 0.1s using GEngine debug messages
+	// Timer
 	GetWorld()->GetTimerManager().SetTimer(m_HUDTickHandle, [this]()
 		{
 			if (m_HasLoggedDeath || !GEngine) return;
@@ -43,8 +43,8 @@ void UStudentPerceptor_PetrovaIva::BeginPlay()
 			int32 Minutes = FMath::FloorToInt(Elapsed) / 60;
 			int32 Secs = FMath::FloorToInt(Elapsed) % 60;
 			GEngine->AddOnScreenDebugMessage(
-				42,       // fixed key — overwrites same slot every tick
-				0.15f,    // slightly longer than tick interval so it doesn't flicker
+				42,   
+				0.15f,
 				FColor::Yellow,
 				FString::Printf(TEXT("Survival Time: %02d:%02d"), Minutes, Secs));
 		}, 0.1f, true);
@@ -316,7 +316,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
 			{ return HasItemOfType(EItemType::Pistol) || HasItemOfType(EItemType::Shotgun); }));
-		seq->AddChild(std::make_unique<FightAction_PetrovaIva>(300.f));
+		seq->AddChild(std::make_unique<FightAction_PetrovaIva>(200.f));
 		Root->AddChild(std::move(seq));
 	}
 

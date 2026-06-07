@@ -17,8 +17,7 @@ namespace GameAI::BT
 {
 	FightAction_PetrovaIva::FightAction_PetrovaIva(float EngageRange)
 		: m_EngageRange(EngageRange)
-	{
-	}
+	{}
 
 	void FightAction_PetrovaIva::OnEnter(ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard)
 	{
@@ -39,7 +38,7 @@ namespace GameAI::BT
 			return ENodeStatus::Failed;
 		}
 
-		int weaponSlot { FindWeaponSlot(pInventory) };
+		int weaponSlot{ FindWeaponSlot(pInventory) };
 
 		if (weaponSlot < 0)
 		{
@@ -55,15 +54,15 @@ namespace GameAI::BT
 
 			TArray<AActor*> pFoundZombies;
 
-			UGameplayStatics::GetAllActorsOfClass( Survivor.GetWorld(), ABaseZombie::StaticClass(), pFoundZombies);
+			UGameplayStatics::GetAllActorsOfClass(Survivor.GetWorld(), ABaseZombie::StaticClass(), pFoundZombies);
 
 			m_pCachedZombie = nullptr;
 
-			float closestDistSq {m_EngageRange * m_EngageRange};
+			float closestDistSq{ m_EngageRange * m_EngageRange };
 
 			for (AActor* pActor : pFoundZombies)
 			{
-				float distSq = FVector::DistSquared( Survivor.GetActorLocation(), pActor->GetActorLocation());
+				float distSq = FVector::DistSquared(Survivor.GetActorLocation(), pActor->GetActorLocation());
 
 				if (distSq <= closestDistSq)
 				{
@@ -80,7 +79,7 @@ namespace GameAI::BT
 
 		ABaseZombie* pZombie = Cast<ABaseZombie>(m_pCachedZombie);
 
-		float distToZombie = FVector::Dist( Survivor.GetActorLocation(), m_pCachedZombie->GetActorLocation());
+		float distToZombie = FVector::Dist(Survivor.GetActorLocation(), m_pCachedZombie->GetActorLocation());
 
 		//////////// Zombie-type movement strategy
 		// Runner— weak, rush it
@@ -110,7 +109,7 @@ namespace GameAI::BT
 
 				Flee fleeSteering{};
 
-				fleeSteering.m_Target= staticTarget;
+				fleeSteering.m_Target = staticTarget;
 
 				moveOut = fleeSteering.CalculateSteering(DeltaTime, proxy);
 			}
@@ -132,7 +131,7 @@ namespace GameAI::BT
 				{
 					if (AAIController* pController = Cast<AAIController>(Survivor.GetController()))
 					{
-						pController->MoveToLocation( zombiePos3D, m_EngageRange * 0.5f, true, true, true);
+						pController->MoveToLocation(zombiePos3D, m_EngageRange * 0.5f, true, true, true);
 
 						m_HasActiveMoveRequest = true;
 					}
@@ -157,7 +156,7 @@ namespace GameAI::BT
 
 		if (moveOut.LinearVelocity.SizeSquared() > 0.01f)
 		{
-			FVector direction( moveOut.LinearVelocity.X, moveOut.LinearVelocity.Y, 0.f);
+			FVector direction(moveOut.LinearVelocity.X, moveOut.LinearVelocity.Y, 0.f);
 
 			Survivor.AddMovementInput(direction.GetSafeNormal());
 		}
@@ -206,8 +205,8 @@ namespace GameAI::BT
 	int FightAction_PetrovaIva::FindWeaponSlot(UInventoryComponent* pInventory) const
 	{
 		auto ITEMS = pInventory->GetInventory();
-		int bestSlot{-1};
-		float bestValue{0.f};
+		int bestSlot{ -1 };
+		float bestValue{ 0.f };
 
 		for (int32 index{}; index < ITEMS.Num(); ++index)
 		{
