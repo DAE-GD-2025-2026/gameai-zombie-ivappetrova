@@ -41,61 +41,45 @@ namespace GameAI::BT
 		auto perceivedZombies = m_pPerceptor->GetPerceivedZombies();
 		if (perceivedZombies.IsEmpty()) return ENodeStatus::Failed;
 
-		// Pick the most dangerous zombie to flee from
-		ABaseZombie* pMostDangerous{ nullptr };
-		float mostDangerousDist{ FLT_MAX };
-		int mostDangerousTier{ -1 };
+		FSurvivorSteeringProxy proxy(Survivor);
+		FVector2D survivorPos2D = proxy.GetPosition();
+
+		FVector2D aggregateFleeVec = FVector2D::ZeroVector;
+		float closestDist = FLT_MAX;
+		bool anyInRange = false;
 
 		for (ABaseZombie* pZombie : perceivedZombies)
 		{
 			if (!IsValid(pZombie)) continue;
 
-			float dist = FVector::Dist(Survivor.GetActorLocation(), pZombie->GetActorLocation());
+			FVector zombiePos = pZombie->GetActorLocation();
+			float dist = FVector::Dist(Survivor.GetActorLocation(), zombiePos);
 
-			// Only react to zombies within flee distance
 			if (dist >= m_FleeDistance) continue;
+			anyInRange = true;
+			closestDist = FMath::Min(closestDist, dist);
 
-			int tier{ 0 };
-			if (IsHeavyZombie(pZombie))  
-			{
-				tier = 2;
-			}
-			else if (IsRunnerZombie(pZombie))
-			{
-				tier = 1;
-			}
+			// Tier multiplier: heavier/faster zombies push harder
+			float tierMult = 1.f;
+			if (IsHeavyZombie(pZombie))       tierMult = 3.f;
+			else if (IsRunnerZombie(pZombie))  tierMult = 2.f;
 
-			if (tier > mostDangerousTier || (tier == mostDangerousTier && dist < mostDangerousDist))
-			{
-				mostDangerousTier = tier;
-				mostDangerousDist = dist;
-				pMostDangerous = pZombie;
-			}
+			// Predict future zombie position and flee from that (evade logic)
+			FVector zombieVel = pZombie->GetVelocity();
+			FVector2D zombiePos2D(zombiePos.X, zombiePos.Y);
+			FVector2D zombieVel2D(zombieVel.X, zombieVel.Y);
+			float t = dist / (proxy.GetMaxLinearSpeed() + 0.01f);
+			FVector2D futurePos = zombiePos2D + zombieVel2D * t;
+
+			FVector2D awayFromFuture = survivorPos2D - futurePos;
+			float weight = tierMult / FMath::Max(dist, 1.f);
+			aggregateFleeVec += awayFromFuture.GetSafeNormal() * weight;
 		}
 
-		// all zombies are out of range
-		if (!pMostDangerous) return ENodeStatus::Succeeded; 
+		if (!anyInRange) return ENodeStatus::Succeeded;
+		if (closestDist >= m_SafeDistance) return ENodeStatus::Succeeded;
 
-		// Already far enough from the most dangerous zombie — done
-		if (mostDangerousDist >= m_SafeDistance) return ENodeStatus::Succeeded;
-
-		// Build target data for Evade
-		FTargetData zombieTarget{};
-		FVector zombiePos = pMostDangerous->GetActorLocation();
-		FVector zombieVel = pMostDangerous->GetVelocity();
-		zombieTarget.Position = FVector2D(zombiePos.X, zombiePos.Y);
-		zombieTarget.LinearVelocity = FVector2D(zombieVel.X, zombieVel.Y);
-		FSurvivorSteeringProxy proxy(Survivor);
-		m_EvadeSteering.m_Target = zombieTarget;
-		SteeringOutput Out = m_EvadeSteering.CalculateSteering(DeltaTime, proxy);
-
-		if (!Out.IsValid || Out.LinearVelocity.SizeSquared() < 0.01f)
-		{
-			FVector2D awayDir = proxy.GetPosition() - zombieTarget.Position;
-			Out.LinearVelocity = awayDir;
-		}
-
-		FVector dir(Out.LinearVelocity.X, Out.LinearVelocity.Y, 0.f);
+		FVector dir(aggregateFleeVec.X, aggregateFleeVec.Y, 0.f);
 		Survivor.AddMovementInput(dir.GetSafeNormal());
 
 		return ENodeStatus::Running;

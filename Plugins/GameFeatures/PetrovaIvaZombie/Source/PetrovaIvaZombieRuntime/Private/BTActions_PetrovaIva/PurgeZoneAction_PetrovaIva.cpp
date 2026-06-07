@@ -14,9 +14,11 @@ namespace GameAI::BT
 
 	ENodeStatus PurgeZoneAction_PetrovaIva::Tick(float DeltaTime, ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Purge Zone Action Ticking"));
+
 		TArray<AActor*> pFoundZones;
 		UGameplayStatics::GetAllActorsOfClass(Survivor.GetWorld(), APurgeZone::StaticClass(), pFoundZones);
-		static constexpr float PURGE_ZONE_SENTINEL_RADIUS{ 5000.f };
+		static constexpr float PURGE_ZONE_SENTINEL_RADIUS{ 150.f };
 
 		FVector survivorPos = Survivor.GetActorLocation();
 
