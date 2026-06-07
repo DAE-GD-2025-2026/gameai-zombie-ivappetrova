@@ -4,8 +4,78 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Survivor/SurvivorPawn.h"
 #include "Common/InventoryComponent.h"
+#include "Common/HealthComponent.h"
+#include "Common/StaminaComponent.h"
 #include "Items/BaseItem.h"
 #include "StudentPerceptor_PetrovaIva.h"
+
+// Priority helpers
+namespace
+{
+	int CountItemsOfType(UInventoryComponent* Inventory, EItemType Type)
+	{
+		int count{};
+		for (ABaseItem* pItem : Inventory->GetInventory())
+		{
+			if (pItem && pItem->GetItemType() == Type && pItem->GetValue() > 0)
+			{
+				++count;
+			}
+		}
+		return count;
+	}
+
+	int GetItemPriority(EItemType Type, UInventoryComponent* Inventory, float CurrentStamina, float MaxStamina, int CurrentHealth)
+	{
+		const bool IS_WEAPON = (Type == EItemType::Pistol || Type == EItemType::Shotgun);
+
+		// Skip garbage
+		if (Type == EItemType::Garbage) return -1;
+
+		// Count how many of this type we already carry
+		int countOwned = CountItemsOfType(Inventory, Type);
+
+		// Weapons share the 2 weapons cap across both subtypes
+		if (IS_WEAPON)
+		{
+			int weaponCount = CountItemsOfType(Inventory, EItemType::Pistol) + CountItemsOfType(Inventory, EItemType::Shotgun);
+			if (weaponCount >= 2) return -1;
+		}
+		else
+		{
+			if (countOwned >= 2) return -1;
+		}
+
+		// Base scores
+		int score{};
+		switch (Type)
+		{
+		case EItemType::Food:   score = 0; break;
+		case EItemType::Medkit: score = 1; break;
+		case EItemType::Pistol:
+		case EItemType::Shotgun: score = 2; break;
+		default: return -1;
+		}
+
+		// Urgency overrides — swap food and medkit to the very front when critical
+		const float staminaRatio = (MaxStamina > 0.f) ? (CurrentStamina / MaxStamina) : 1.f;
+		const bool staminaLow = (staminaRatio < 0.75f);   // stamina < 7.5 on a 10-max scale
+		const bool healthLow = (CurrentHealth < 7);
+
+		if (Type == EItemType::Food && staminaLow)
+		{
+			score = -100;
+		}
+			
+		if (Type == EItemType::Medkit && healthLow)
+		{
+			score = (staminaLow ? -99 : -100); // food still wins if both are critical
+		}
+
+		return score;
+	}
+}
+// ---------------------------------------------------------------------------
 
 namespace GameAI::BT
 {
@@ -45,7 +115,7 @@ namespace GameAI::BT
 		{
 			m_pTargetItem = nullptr;
 		}
-		
+
 		// Pick a new target from perceived items, skipping blacklisted ones
 		if (!IsValid(m_pTargetItem))
 		{
@@ -66,7 +136,7 @@ namespace GameAI::BT
 				{
 					++availableCount;
 				}
-					
+
 			}
 
 			// If every perceived item is blacklisted, clear the blacklist and retry
@@ -86,15 +156,36 @@ namespace GameAI::BT
 				if (availableCount == 0) return ENodeStatus::Failed;
 			}
 
-			// Pick the closest non-blacklisted perceived item
+			// Gather survivor stats needed for priority scoring
+			float currentStamina = 0.f, maxStamina = 1.f;
+			int currentHealth = 10;
+			if (UStaminaComponent* pStamina = Survivor.GetComponentByClass<UStaminaComponent>())
+			{
+				currentStamina = pStamina->GetCurrentStamina();
+				maxStamina = pStamina->GetMaxStamina();
+			}
+			if (UHealthComponent* pHealth = Survivor.GetComponentByClass<UHealthComponent>())
+			{
+				currentHealth = pHealth->GetHealth();
+			}
+
+			// Pick the highest-priority non-blacklisted perceived item;
+			// break ties by distance (closest wins within the same priority tier)
+			int   bestPriority = INT_MAX;
 			float bestDistSq = FLT_MAX;
 			for (ABaseItem* pItem : perceivedItems)
 			{
 				if (!IsValid(pItem) || pItem->GetValue() <= 0) continue;
 				if (m_BlacklistedItems.Contains(pItem)) continue;
+
+				int priority = GetItemPriority(pItem->GetItemType(), pInventory, currentStamina, maxStamina, currentHealth);
+				if (priority < 0) continue; // skip unwanted types
+
 				float distSq = FVector::DistSquared(Survivor.GetActorLocation(), pItem->GetActorLocation());
-				if (distSq < bestDistSq)
+
+				if (priority < bestPriority || (priority == bestPriority && distSq < bestDistSq))
 				{
+					bestPriority = priority;
 					bestDistSq = distSq;
 					m_pTargetItem = pItem;
 				}
@@ -130,7 +221,7 @@ namespace GameAI::BT
 		if (out.LinearVelocity.SizeSquared() > 0.01f)
 		{
 			FVector2D dir2D = out.LinearVelocity.GetSafeNormal();
-			float speedScale = FMath::Clamp( out.LinearVelocity.Size() / m_ArriveSteering.m_SlowRadius, 0.1f, 1.f);
+			float speedScale = FMath::Clamp(out.LinearVelocity.Size() / m_ArriveSteering.m_SlowRadius, 0.1f, 1.f);
 			Survivor.AddMovementInput(FVector(dir2D.X, dir2D.Y, 0.f), speedScale);
 		}
 
