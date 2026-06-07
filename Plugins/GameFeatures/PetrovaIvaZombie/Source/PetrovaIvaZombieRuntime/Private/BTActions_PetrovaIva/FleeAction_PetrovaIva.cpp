@@ -23,7 +23,7 @@ namespace GameAI::BT
 		, m_FleeDistance(FleeDistance)
 		, m_pPerceptor(Perceptor)
 	{
-		m_EvadeSteering.SetEvadeRadius(FleeDistance);
+		m_EvadeSteering.m_EvadeRadius = FleeDistance;
 	}
 
 	void FleeAction_PetrovaIva::OnEnter(ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard)
@@ -86,7 +86,7 @@ namespace GameAI::BT
 		zombieTarget.Position = FVector2D(zombiePos.X, zombiePos.Y);
 		zombieTarget.LinearVelocity = FVector2D(zombieVel.X, zombieVel.Y);
 		FSurvivorSteeringProxy proxy(Survivor);
-		m_EvadeSteering.SetTarget(zombieTarget);
+		m_EvadeSteering.m_Target = zombieTarget;
 		SteeringOutput Out = m_EvadeSteering.CalculateSteering(DeltaTime, proxy);
 
 		if (!Out.IsValid || Out.LinearVelocity.SizeSquared() < 0.01f)

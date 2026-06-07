@@ -16,11 +16,7 @@ namespace GameAI::BT
 	{
 		TArray<AActor*> pFoundZones;
 		UGameplayStatics::GetAllActorsOfClass(Survivor.GetWorld(), APurgeZone::StaticClass(), pFoundZones);
-
-		// TODO: Replace PURGE_ZONE_SENTINEL_RADIUS with Zone->GetDiameter() * 0.5f once
-		// you add  `float GetDiameter() const { return Diameter; }`  to PurgeZone.h.
-		// That single line removes the need for this sentinel entirely.
-		static constexpr float PURGE_ZONE_SENTINEL_RADIUS = 5000.f;
+		static constexpr float PURGE_ZONE_SENTINEL_RADIUS{ 5000.f };
 
 		FVector survivorPos = Survivor.GetActorLocation();
 
@@ -47,7 +43,7 @@ namespace GameAI::BT
 		zoneTarget.Position = FVector2D(zoneCenter.X, zoneCenter.Y);
 
 		FSurvivorSteeringProxy proxy(Survivor);
-		m_FleeSteering.SetTarget(zoneTarget);
+		m_FleeSteering.m_Target = zoneTarget;
 		SteeringOutput out = m_FleeSteering.CalculateSteering(DeltaTime, proxy);
 
 		if (out.LinearVelocity.SizeSquared() > 0.01f)

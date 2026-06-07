@@ -50,7 +50,7 @@ void FSurvivorSteeringProxy::SetMaxLinearSpeed(float NewSpeed)
 SteeringOutput Seek::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy)
 {
 	SteeringOutput steering{};
-	FVector2D toTarget = Target.Position - Proxy.GetPosition();
+	FVector2D toTarget = m_Target.Position - Proxy.GetPosition();
 	steering.LinearVelocity = (toTarget.Size() < 1.f) ? FVector2D::ZeroVector : toTarget;
 	return steering;
 }
@@ -61,7 +61,7 @@ SteeringOutput Seek::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Pro
 SteeringOutput Flee::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy)
 {
 	SteeringOutput steering{};
-	steering.LinearVelocity = Proxy.GetPosition() - Target.Position;
+	steering.LinearVelocity = Proxy.GetPosition() - m_Target.Position;
 	return steering;
 }
 
@@ -71,7 +71,7 @@ SteeringOutput Flee::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Pro
 SteeringOutput Arrive::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy)
 {
 	SteeringOutput steering{};
-	FVector2D toTarget = Target.Position - Proxy.GetPosition();
+	FVector2D toTarget = m_Target.Position - Proxy.GetPosition();
 	float distance = toTarget.Size();
 
 	float currentMax = Proxy.GetMaxLinearSpeed();
@@ -101,7 +101,7 @@ SteeringOutput Arrive::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& P
 SteeringOutput Face::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy)
 {
 	SteeringOutput steering{};
-	FVector2D toTarget = Target.Position - Proxy.GetPosition();
+	FVector2D toTarget = m_Target.Position - Proxy.GetPosition();
 	const float ORBIT_RADIUS = 200.f;
 
 	if (toTarget.Size() > ORBIT_RADIUS)
@@ -130,9 +130,9 @@ SteeringOutput Face::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Pro
 SteeringOutput Pursuit::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy)
 {
 	SteeringOutput steering{};
-	FVector2D toTarget = Target.Position - Proxy.GetPosition();
+	FVector2D toTarget = m_Target.Position - Proxy.GetPosition();
 	float t = toTarget.Size() / (Proxy.GetMaxLinearSpeed() + 0.01f);
-	FVector2D futurePos = Target.Position + Target.LinearVelocity * t;
+	FVector2D futurePos = m_Target.Position + m_Target.LinearVelocity * t;
 
 	steering.LinearVelocity = futurePos - Proxy.GetPosition();
 	return steering;
@@ -144,7 +144,7 @@ SteeringOutput Pursuit::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& 
 SteeringOutput Evade::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy)
 {
 	SteeringOutput steering{};
-	FVector2D toTarget = Target.Position - Proxy.GetPosition();
+	FVector2D toTarget = m_Target.Position - Proxy.GetPosition();
 
 	if (toTarget.Size() > m_EvadeRadius)
 	{
@@ -153,7 +153,7 @@ SteeringOutput Evade::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Pr
 	}
 
 	float t = toTarget.Size() / (Proxy.GetMaxLinearSpeed() + 0.01f);
-	FVector2D futurePos = Target.Position + Target.LinearVelocity * t;
+	FVector2D futurePos = m_Target.Position + m_Target.LinearVelocity * t;
 
 	steering.LinearVelocity = Proxy.GetPosition() - futurePos;
 	steering.IsValid = true;
@@ -167,9 +167,9 @@ SteeringOutput Wander::CalculateSteering(float DeltaT, FSurvivorSteeringProxy& P
 {
 	SteeringOutput steering{};
 
-	const float CIRCLE_DISTANCE = 100.f;
-	const float CIRCLE_RADIUS = 50.f;
-	const float ANGLE_CHANGE = 45.f;
+	const float CIRCLE_DISTANCE { 100.f };
+	const float CIRCLE_RADIUS { 50.f };
+	const float ANGLE_CHANGE { 45.f };
 
 	m_WanderAngle += FMath::RandRange(-1.f, 1.f) * ANGLE_CHANGE * DeltaT;
 

@@ -130,8 +130,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 			if (PurgeCache->Timer >= PURGE_ZONE_CACHE_INTERVAL || PurgeCache->Zones.IsEmpty())
 			{
 				PurgeCache->Timer = 0.f;
-				UGameplayStatics::GetAllActorsOfClass(
-					Survivor->GetWorld(), APurgeZone::StaticClass(), PurgeCache->Zones);
+				UGameplayStatics::GetAllActorsOfClass(Survivor->GetWorld(), APurgeZone::StaticClass(), PurgeCache->Zones);
 			}
 
 			FVector survivorPos = Survivor->GetActorLocation();
@@ -139,10 +138,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 			{
 				APurgeZone* pZone = Cast<APurgeZone>(pActor);
 				if (!pZone) continue;
-				// Replace PURGE_ZONE_SENTINEL_RADIUS with Zone->GetDiameter() * 0.5f
-				// once you add the public getter to PurgeZone.h
-				if (FVector::Dist(survivorPos, pZone->GetActorLocation()) < PURGE_ZONE_SENTINEL_RADIUS)
-					return true;
+				if (FVector::Dist(survivorPos, pZone->GetActorLocation()) < PURGE_ZONE_SENTINEL_RADIUS) return true;
 			}
 			return false;
 		};
@@ -181,17 +177,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 2: Flee — zombie nearby, no weapon
-	{
-		auto seq = std::make_unique<Sequence>();
-		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
-		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
-			{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
-		seq->AddChild(std::make_unique<FleeAction_PetrovaIva>(1200.f, 1800.f, this));
-		Root->AddChild(std::move(seq));
-	}
-
-	////////////////////////////////////////////////////////////////////////////// Branch 3: Hide — zombie nearby, no weapon, but a house is in sight.
+	////////////////////////////////////////////////////////////////////////////// Branch 2: Hide — zombie nearby, no weapon, but a house is in sight.
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
@@ -200,6 +186,16 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		seq->AddChild(std::make_unique<Condition>([this]()
 			{ return !GetPerceivedHouses().IsEmpty(); }));
 		seq->AddChild(std::make_unique<HideAction_PetrovaIva>(this));
+		Root->AddChild(std::move(seq));
+	}
+
+	////////////////////////////////////////////////////////////////////////////// Branch 3: Flee — zombie nearby, no weapon
+	{
+		auto seq = std::make_unique<Sequence>();
+		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
+		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
+			{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
+		seq->AddChild(std::make_unique<FleeAction_PetrovaIva>(1200.f, 1800.f, this));
 		Root->AddChild(std::move(seq));
 	}
 

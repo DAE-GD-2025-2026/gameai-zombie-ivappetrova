@@ -28,13 +28,10 @@ public:
 
 	virtual SteeringOutput CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy) = 0;
 
-	void SetTarget(const FTargetData& NewTarget) { Target = NewTarget; }
-
 	template<class T, std::enable_if_t<std::is_base_of_v<ISteeringBehavior, T>>* = nullptr>
 	T* As() { return static_cast<T*>(this); }
 
-protected:
-	FTargetData Target;
+	FTargetData m_Target;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -91,9 +88,7 @@ class Evade : public ISteeringBehavior
 {
 public:
 	virtual SteeringOutput CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy) override;
-	void SetEvadeRadius(float r) { m_EvadeRadius = r; }
 
-private:
 	float m_EvadeRadius{ 600.f };
 };
 
@@ -104,13 +99,10 @@ class Wander : public Seek
 public:
 	virtual SteeringOutput CalculateSteering(float DeltaT, FSurvivorSteeringProxy& Proxy) override;
 
-	void SetWanderOffset(float offset) { m_OffsetDistance = offset; }
-	void SetWanderRadius(float radius) { m_Radius = radius; }
-	void SetMaxAngleChange(float rad) { m_MaxAngleChange = rad; }
-
-protected:
 	float m_OffsetDistance{ 6.f };
 	float m_Radius{ 4.f };
 	float m_MaxAngleChange{ 45.f * PI / 180.f };
+
+protected:
 	float m_WanderAngle{ 0.f };
 };

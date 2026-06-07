@@ -110,7 +110,7 @@ namespace GameAI::BT
 
 				Flee fleeSteering{};
 
-				fleeSteering.SetTarget(staticTarget);
+				fleeSteering.m_Target= staticTarget;
 
 				moveOut = fleeSteering.CalculateSteering(DeltaTime, proxy);
 			}
@@ -163,7 +163,7 @@ namespace GameAI::BT
 		}
 
 		// Rotate the pawn toward the zombie before firing
-		m_FaceSteering.SetTarget(zombieTarget);
+		m_FaceSteering.m_Target = zombieTarget;
 		SteeringOutput faceOut = m_FaceSteering.CalculateSteering(DeltaTime, proxy);
 
 		if (FMath::Abs(faceOut.AngularVelocity) > 0.1f)

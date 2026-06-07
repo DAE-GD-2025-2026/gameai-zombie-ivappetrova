@@ -124,7 +124,7 @@ namespace GameAI::BT
 		itemTarget.Position = FVector2D(itemPos.X, itemPos.Y);
 
 		FSurvivorSteeringProxy proxy(Survivor);
-		m_ArriveSteering.SetTarget(itemTarget);
+		m_ArriveSteering.m_Target = itemTarget;
 		SteeringOutput out = m_ArriveSteering.CalculateSteering(DeltaTime, proxy);
 
 		if (out.LinearVelocity.SizeSquared() > 0.01f)

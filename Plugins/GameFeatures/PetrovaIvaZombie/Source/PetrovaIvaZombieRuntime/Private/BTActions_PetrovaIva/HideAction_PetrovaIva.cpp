@@ -58,7 +58,7 @@ namespace GameAI::BT
 		houseTarget.Position = FVector2D(bounds.Origin.X, bounds.Origin.Y);
 
 		FSurvivorSteeringProxy proxy(Survivor);
-		m_ArriveSteering.SetTarget(houseTarget);
+		m_ArriveSteering.m_Target = houseTarget;
 		SteeringOutput out = m_ArriveSteering.CalculateSteering(DeltaTime, proxy);
 
 		if (out.LinearVelocity.SizeSquared() > 0.01f)
