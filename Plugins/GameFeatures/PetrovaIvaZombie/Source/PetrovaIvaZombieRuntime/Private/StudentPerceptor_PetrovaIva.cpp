@@ -21,7 +21,7 @@
 
 UStudentPerceptor_PetrovaIva::UStudentPerceptor_PetrovaIva()
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 }
 
 void UStudentPerceptor_PetrovaIva::BeginPlay()
@@ -32,6 +32,22 @@ void UStudentPerceptor_PetrovaIva::BeginPlay()
 	{
 		pPerceptionComp->OnTargetPerceptionUpdated.AddDynamic(this, &UStudentPerceptor_PetrovaIva::OnPerceptionUpdated);
 	}
+
+	m_SurvivalStartTime = GetWorld()->GetTimeSeconds();
+
+	// Update the on-screen survival timer every 0.1s using GEngine debug messages
+	GetWorld()->GetTimerManager().SetTimer(m_HUDTickHandle, [this]()
+		{
+			if (m_HasLoggedDeath || !GEngine) return;
+			float Elapsed = GetWorld()->GetTimeSeconds() - m_SurvivalStartTime;
+			int32 Minutes = FMath::FloorToInt(Elapsed) / 60;
+			int32 Secs = FMath::FloorToInt(Elapsed) % 60;
+			GEngine->AddOnScreenDebugMessage(
+				42,       // fixed key — overwrites same slot every tick
+				0.15f,    // slightly longer than tick interval so it doesn't flicker
+				FColor::Yellow,
+				FString::Printf(TEXT("Survival Time: %02d:%02d"), Minutes, Secs));
+		}, 0.1f, true);
 
 	FTimerHandle timerHandle;
 	GetWorld()->GetTimerManager().SetTimer(timerHandle, [this]()
@@ -53,31 +69,24 @@ void UStudentPerceptor_PetrovaIva::BeginPlay()
 	FTimerHandle cleanupHandle;
 	GetWorld()->GetTimerManager().SetTimer(cleanupHandle, [this]()
 		{
-			PerceivedZombies.RemoveAll([](ABaseZombie* Z) { return !IsValid(Z); });
-			PerceivedItems.RemoveAll([](ABaseItem* I) { return !IsValid(I); });
-			PerceivedHouses.RemoveAll([](AHouse* H) { return !IsValid(H); });
+			m_PerceivedZombies.RemoveAll([](ABaseZombie* Z) { return !IsValid(Z); });
+			m_PerceivedItems.RemoveAll([](ABaseItem* I) { return !IsValid(I); });
+			m_PerceivedHouses.RemoveAll([](AHouse* H) { return !IsValid(H); });
 		}, 0.5f, true);
-}
-
-void UStudentPerceptor_PetrovaIva::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	float worldTime = GetWorld()->GetTimeSeconds();
-	GEngine->AddOnScreenDebugMessage(99, 0.f, FColor::Yellow, FString::Printf(TEXT("Game Time: %02d:%02d"), (int)worldTime / 60, (int)worldTime % 60));
 }
 
 void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, USurvivorBTComponent_PetrovaIva* BTComp)
 {
 	using namespace GameAI::BT;
 
-	// Blackboard query helpers
+	auto GetHealth = [Survivor]() -> UHealthComponent*
+		{ return Survivor ? Survivor->GetComponentByClass<UHealthComponent>() : nullptr; };
 
-	auto GetHealth = [Survivor]() -> UHealthComponent* { return Survivor ? Survivor->GetComponentByClass<UHealthComponent>() : nullptr; };
+	auto GetInventory = [Survivor]() -> UInventoryComponent*
+		{ return Survivor ? Survivor->GetComponentByClass<UInventoryComponent>() : nullptr; };
 
-	auto GetInventory = [Survivor]() -> UInventoryComponent* { return Survivor ? Survivor->GetComponentByClass<UInventoryComponent>() : nullptr; };
-
-	auto GetStamina = [Survivor]() -> UStaminaComponent* { return Survivor ? Survivor->GetComponentByClass<UStaminaComponent>() : nullptr; };
+	auto GetStamina = [Survivor]() -> UStaminaComponent*
+		{ return Survivor ? Survivor->GetComponentByClass<UStaminaComponent>() : nullptr; };
 
 	auto HasItemOfType = [GetInventory](EItemType Type) -> bool
 		{
@@ -86,11 +95,8 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 			for (ABaseItem* pItem : pInv->GetInventory())
 			{
 				if (pItem && pItem->GetItemType() == Type && pItem->GetValue() > 0)
-				{
 					return true;
-				}
 			}
-
 			return false;
 		};
 
@@ -102,7 +108,6 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 			{
 				if (pItem == nullptr) return false;
 			}
-
 			return true;
 		};
 
@@ -137,7 +142,6 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		{
 			if (!Survivor) return false;
 
-			// Refresh the actor list at most once per second
 			PurgeCache->Timer += Survivor->GetWorld()->GetDeltaSeconds();
 			if (PurgeCache->Timer >= PURGE_ZONE_CACHE_INTERVAL || PurgeCache->Zones.IsEmpty())
 			{
@@ -158,8 +162,8 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 
 	auto Root = std::make_unique<Selector>();
 
-	//////////////////////////////////////////////////////////////////////////////// Branch -1: Death guard
-	Root->AddChild(std::make_unique<Condition>([GetHealth, GetStamina, Survivor, BTComp, this]() 
+	// Branch -1: Death guard
+	Root->AddChild(std::make_unique<Condition>([this, GetHealth, GetStamina, Survivor, BTComp]()
 		{
 			UHealthComponent* pHealth = GetHealth();
 			UStaminaComponent* pStamina = GetStamina();
@@ -169,43 +173,53 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 
 			if (HEALTH_DEAD || STAMINA_DEAD)
 			{
-				float worldTime = GetWorld()->GetTimeSeconds();
-				UE_LOG(LogTemp, Warning, TEXT("Survivor is dead — movement disabled."));
-				UE_LOG(LogTemp, Warning, TEXT("Time survived: %02d:%02d"), (int)worldTime / 60, (int)worldTime % 60); 
+				if (!m_HasLoggedDeath)
+				{
+					m_HasLoggedDeath = true;
+					float SurvivalTime = Survivor ? Survivor->GetWorld()->GetTimeSeconds() - m_SurvivalStartTime : 0.f;
+					int32 Minutes = FMath::FloorToInt(SurvivalTime) / 60;
+					int32 Secs = FMath::FloorToInt(SurvivalTime) % 60;
+					UE_LOG(LogTemp, Warning, TEXT("Survivor is dead — survived for %02d:%02d."), Minutes, Secs);
 
+					// Freeze the on-screen timer in red
+					GetWorld()->GetTimerManager().ClearTimer(m_HUDTickHandle);
+					if (GEngine)
+					{
+						GEngine->AddOnScreenDebugMessage(
+							42,
+							9999.f,   // stay on screen indefinitely
+							FColor::Red,
+							FString::Printf(TEXT("Survival Time: %02d:%02d [DEAD]"), Minutes, Secs));
+					}
+				}
 				if (BTComp) BTComp->StopLogic(TEXT("Dead"));
 				if (Survivor)
 				{
 					Survivor->StopRunning();
 					if (UFloatingPawnMovement* pFPM = Survivor->GetComponentByClass<UFloatingPawnMovement>())
-					{
 						pFPM->MaxSpeed = 0.f;
-					}
 				}
 				return true;
 			}
 			return false;
 		}));
 
-	////////////////////////////////////////////////////////////////////////////// Branch 0: Garbage cleanup
+	// Branch 0: Garbage cleanup
 	Root->AddChild(std::make_unique<Condition>([CleanInventory]()
 		{
 			CleanInventory();
 			return false;
 		}));
 
-	////////////////////////////////////////////////////////////////////////////// Branch 1: PURGE ZONE 
+	// Branch 1: PURGE ZONE
 	{
 		auto seq = std::make_unique<Sequence>();
-		seq->AddChild(std::make_unique<Condition>([IsInPurgeZone]() mutable
-			{
-				return IsInPurgeZone();
-			}));
+		seq->AddChild(std::make_unique<Condition>([IsInPurgeZone]() mutable { return IsInPurgeZone(); }));
 		seq->AddChild(std::make_unique<PurgeZoneAction_PetrovaIva>());
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 2: Heal
+	// Branch 2: Heal
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([GetHealth, GetInventory]()
@@ -220,20 +234,16 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 				for (ABaseItem* pItem : pInv->GetInventory())
 				{
 					if (pItem && pItem->GetItemType() == EItemType::Medkit && pItem->GetValue() > 0)
-					{
-						if (currentHealth + pItem->GetValue() <= maxHealth)
-							return true;
-					}
+						if (currentHealth + pItem->GetValue() <= maxHealth) return true;
 				}
 				return false;
 			}));
-		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
-			{ return HasItemOfType(EItemType::Medkit); }));
+		seq->AddChild(std::make_unique<Condition>([HasItemOfType]() { return HasItemOfType(EItemType::Medkit); }));
 		seq->AddChild(std::make_unique<UseItemAction_PetrovaIva>(EItemType::Medkit));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 3: Eat
+	// Branch 3: Eat
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([GetStamina, GetInventory]()
@@ -248,20 +258,16 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 				for (ABaseItem* pItem : pInv->GetInventory())
 				{
 					if (pItem && pItem->GetItemType() == EItemType::Food && pItem->GetValue() > 0)
-					{
-						if (currentStamina + pItem->GetValue() <= maxStamina)
-							return true;
-					}
+						if (currentStamina + pItem->GetValue() <= maxStamina) return true;
 				}
 				return false;
 			}));
-		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
-			{ return HasItemOfType(EItemType::Food); }));
+		seq->AddChild(std::make_unique<Condition>([HasItemOfType]() { return HasItemOfType(EItemType::Food); }));
 		seq->AddChild(std::make_unique<UseItemAction_PetrovaIva>(EItemType::Food));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 4: Loot— low HP or stamina, prioritize over fleeing
+	// Branch 4: Loot — low HP or stamina
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([GetHealth, GetStamina]()
@@ -272,22 +278,19 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 
 				float healthRatio = (float)pHealth->GetHealth() / (float)pHealth->GetMaxHealth();
 				float staminaRatio = pStamina->GetCurrentStamina() / pStamina->GetMaxStamina();
-
 				return healthRatio < 0.5f || staminaRatio < 0.5f;
 			}));
-		seq->AddChild(std::make_unique<Condition>([InventoryFull]()
-			{ return !InventoryFull(); }));
+		seq->AddChild(std::make_unique<Condition>([InventoryFull]() { return !InventoryFull(); }));
 		seq->AddChild(std::make_unique<LootAction_PetrovaIva>(this));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 5: Flee — zombie nearby, no weapon
+	// Branch 5: Flee — zombie nearby, no weapon
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
 			{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
-		// don't flee if already inside a house - movement gets stuck in walls
 		seq->AddChild(std::make_unique<Condition>([Survivor]()
 			{
 				TArray<AActor*> pFoundHouses;
@@ -300,35 +303,32 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 					if (!pHouse) continue;
 					FHouseBounds bounds = pHouse->GetBounds();
 					FBox box(bounds.Origin - bounds.Extent * 0.8f, bounds.Origin + bounds.Extent * 0.8f);
-					// inside = block flee
 					if (box.IsInside(survivorPos)) return false;
 				}
-				// not inside any house = allow flee
 				return true;
 			}));
 		seq->AddChild(std::make_unique<FleeAction_PetrovaIva>(1200.f, 1800.f, this));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 6: Fight— zombie nearby, has weapon
+	// Branch 6: Fight — has weapon
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
 			{ return HasItemOfType(EItemType::Pistol) || HasItemOfType(EItemType::Shotgun); }));
-		seq->AddChild(std::make_unique<FightAction_PetrovaIva>(600.f));
+		seq->AddChild(std::make_unique<FightAction_PetrovaIva>(300.f));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 7: Loot— inventory not full
+	// Branch 7: Loot — inventory not full
 	{
 		auto seq = std::make_unique<Sequence>();
-		seq->AddChild(std::make_unique<Condition>([InventoryFull]()
-			{ return !InventoryFull(); }));
+		seq->AddChild(std::make_unique<Condition>([InventoryFull]() { return !InventoryFull(); }));
 		seq->AddChild(std::make_unique<LootAction_PetrovaIva>(this));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 8: Explore
+	// Branch 8: Explore
 	Root->AddChild(std::make_unique<ExploreAction_PetrovaIva>());
 
 	BTComp->SetRoot(std::move(Root));
@@ -342,47 +342,29 @@ void UStudentPerceptor_PetrovaIva::OnPerceptionUpdated(AActor* Actor, FAIStimulu
 
 	if (ABaseZombie* pZombie = Cast<ABaseZombie>(Actor))
 	{
-		if (wasSensed)
-		{
-			PerceivedZombies.AddUnique(pZombie);
-		}
-		else
-		{
-			PerceivedZombies.Remove(pZombie);
-		}
+		if (wasSensed) m_PerceivedZombies.AddUnique(pZombie);
+		else           m_PerceivedZombies.Remove(pZombie);
 		return;
 	}
 
 	if (ABaseItem* pItem = Cast<ABaseItem>(Actor))
 	{
-		if (wasSensed)
-		{
-			PerceivedItems.AddUnique(pItem);
-		}
-		else
-		{
-			PerceivedItems.Remove(pItem);
-		}
+		if (wasSensed) m_PerceivedItems.AddUnique(pItem);
+		else           m_PerceivedItems.Remove(pItem);
 		return;
 	}
 
 	if (AHouse* pHouse = Cast<AHouse>(Actor))
 	{
-		if (wasSensed)
-		{
-			PerceivedHouses.AddUnique(pHouse);
-		}
-		else
-		{
-			PerceivedHouses.Remove(pHouse);
-		}
+		if (wasSensed) m_PerceivedHouses.AddUnique(pHouse);
+		else           m_PerceivedHouses.Remove(pHouse);
 		return;
 	}
 }
 
 bool UStudentPerceptor_PetrovaIva::HasNearbyZombie() const
 {
-	for (ABaseZombie* pZombie : PerceivedZombies)
+	for (ABaseZombie* pZombie : m_PerceivedZombies)
 	{
 		if (IsValid(pZombie)) return true;
 	}

@@ -23,25 +23,28 @@ public:
 	UStudentPerceptor_PetrovaIva();
 
 	virtual void BeginPlay() override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	UFUNCTION()
 	virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
 
-	TArray<ABaseZombie*> const& GetPerceivedZombies() const { return PerceivedZombies; }
-	TArray<ABaseItem*> const& GetPerceivedItems()   const { return PerceivedItems; }
-	TArray<AHouse*> const& GetPerceivedHouses()  const { return PerceivedHouses; }
+	TArray<ABaseZombie*> const& GetPerceivedZombies() const { return m_PerceivedZombies; }
+	TArray<ABaseItem*>   const& GetPerceivedItems()   const { return m_PerceivedItems; }
+	TArray<AHouse*>      const& GetPerceivedHouses()  const { return m_PerceivedHouses; }
 
 	bool HasNearbyZombie() const;
-	bool HasVisibleItem() const { return !PerceivedItems.IsEmpty(); }
+	bool HasVisibleItem()  const { return !m_PerceivedItems.IsEmpty(); }
 
 private:
 	UPROPERTY()
-	TArray<ABaseZombie*> PerceivedZombies{};
+	TArray<ABaseZombie*> m_PerceivedZombies{};
 	UPROPERTY()
-	TArray<ABaseItem*> PerceivedItems{};
+	TArray<ABaseItem*> m_PerceivedItems{};
 	UPROPERTY()
-	TArray<AHouse*> PerceivedHouses{};
-
+	TArray<AHouse*> m_PerceivedHouses{};
 	void BuildBehaviorTree(ASurvivorPawn* Survivor, USurvivorBTComponent_PetrovaIva* BTComp);
+
+	float m_SurvivalStartTime{ 0.f };
+	bool  m_HasLoggedDeath{ false };
+
+	FTimerHandle m_HUDTickHandle;
 };

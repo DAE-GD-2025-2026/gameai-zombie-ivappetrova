@@ -10,7 +10,7 @@ namespace GameAI::BT
 	class FightAction_PetrovaIva : public Action
 	{
 	public:
-		explicit FightAction_PetrovaIva(float EngageRange = 600.f);
+		explicit FightAction_PetrovaIva(float EngageRange = 300.f);
 
 		virtual void OnEnter(ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard) override;
 		virtual ENodeStatus Tick(float DeltaTime, ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard) override;
