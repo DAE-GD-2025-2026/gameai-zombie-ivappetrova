@@ -31,7 +31,7 @@ public:
 	TArray<ABaseItem*> const& GetPerceivedItems()   const { return PerceivedItems; }
 	TArray<AHouse*> const& GetPerceivedHouses()  const { return PerceivedHouses; }
 
-	bool HasNearbyZombie() const { return !PerceivedZombies.IsEmpty(); }
+	bool HasNearbyZombie() const;
 	bool HasVisibleItem() const { return !PerceivedItems.IsEmpty(); }
 
 private:

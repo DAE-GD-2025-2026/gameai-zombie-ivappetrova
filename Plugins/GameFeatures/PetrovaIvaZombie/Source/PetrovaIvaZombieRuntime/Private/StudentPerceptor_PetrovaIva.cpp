@@ -49,6 +49,14 @@ void UStudentPerceptor_PetrovaIva::BeginPlay()
 			BuildBehaviorTree(pSurvivor, pBTComp);
 			pBTComp->StartLogic();
 		}, 0.5f, false);
+
+	FTimerHandle cleanupHandle;
+	GetWorld()->GetTimerManager().SetTimer(cleanupHandle, [this]()
+		{
+			PerceivedZombies.RemoveAll([](ABaseZombie* Z) { return !IsValid(Z); });
+			PerceivedItems.RemoveAll([](ABaseItem* I) { return !IsValid(I); });
+			PerceivedHouses.RemoveAll([](AHouse* H) { return !IsValid(H); });
+		}, 0.5f, true);
 }
 
 void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, USurvivorBTComponent_PetrovaIva* BTComp)
@@ -245,29 +253,36 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	//////////////////////////////////////////////////////////////////////////////// Branch 4: Hide — zombie nearby, no weapon, but a house is in sight
-	//{
-	//	auto seq = std::make_unique<Sequence>();
-	//	seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
-	//	seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
-	//		{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
-	//	seq->AddChild(std::make_unique<Condition>([this]()
-	//		{ return !GetPerceivedHouses().IsEmpty(); }));
-	//	seq->AddChild(std::make_unique<HideAction_PetrovaIva>(this));
-	//	Root->AddChild(std::move(seq));
-	//}
-
-	////////////////////////////////////////////////////////////////////////////// Branch 5: Flee — zombie nearby, no weapon
+	////////////////////////////////////////////////////////////////////////////// Branch 4: Flee — zombie nearby, no weapon
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
 			{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
+		// don't flee if already inside a house - movement gets stuck in walls
+		seq->AddChild(std::make_unique<Condition>([Survivor]()
+			{
+				TArray<AActor*> pFoundHouses;
+				UGameplayStatics::GetAllActorsOfClass(Survivor->GetWorld(), AHouse::StaticClass(), pFoundHouses);
+
+				FVector survivorPos = Survivor->GetActorLocation();
+				for (AActor* pActor : pFoundHouses)
+				{
+					AHouse* pHouse = Cast<AHouse>(pActor);
+					if (!pHouse) continue;
+					FHouseBounds bounds = pHouse->GetBounds();
+					FBox box(bounds.Origin - bounds.Extent * 0.8f, bounds.Origin + bounds.Extent * 0.8f);
+					// inside = block flee
+					if (box.IsInside(survivorPos)) return false; 
+				}
+				// not inside any house = allow flee
+				return true; 
+			}));
 		seq->AddChild(std::make_unique<FleeAction_PetrovaIva>(1200.f, 1800.f, this));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 6: Fight — zombie nearby, has weapon
+	////////////////////////////////////////////////////////////////////////////// Branch 5: Fight — zombie nearby, has weapon
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
@@ -276,7 +291,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 7: Loot — inventory not full
+	////////////////////////////////////////////////////////////////////////////// Branch 6: Loot — inventory not full
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([InventoryFull]()
@@ -285,7 +300,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 8: Explore
+	////////////////////////////////////////////////////////////////////////////// Branch 7: Explore
 	Root->AddChild(std::make_unique<ExploreAction_PetrovaIva>());
 
 	BTComp->SetRoot(std::move(Root));
@@ -335,4 +350,13 @@ void UStudentPerceptor_PetrovaIva::OnPerceptionUpdated(AActor* Actor, FAIStimulu
 		}
 		return;
 	}
+}
+
+bool UStudentPerceptor_PetrovaIva::HasNearbyZombie() const
+{
+	for (ABaseZombie* pZombie : PerceivedZombies)
+	{
+		if (IsValid(pZombie)) return true;
+	}
+	return false;
 }
