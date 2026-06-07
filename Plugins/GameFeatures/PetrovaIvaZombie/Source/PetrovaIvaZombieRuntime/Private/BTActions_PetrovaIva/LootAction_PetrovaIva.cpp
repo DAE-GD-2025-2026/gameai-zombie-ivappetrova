@@ -12,67 +12,60 @@
 // Priority helpers
 namespace
 {
+	constexpr float STAMINA_LOW_THRESHOLD = 0.6f;
+	constexpr float HEALTH_LOW_THRESHOLD = 0.6f;
+
+	constexpr int PRIORITY_URGENT = 0;
+	constexpr int PRIORITY_HIGH = 1;
+	constexpr int PRIORITY_MEDIUM = 2;
+	constexpr int PRIORITY_LOW = 3;
+	constexpr int PRIORITY_SKIP = -1; // don't pick up
+
 	int CountItemsOfType(UInventoryComponent* Inventory, EItemType Type)
 	{
 		int count{};
 		for (ABaseItem* pItem : Inventory->GetInventory())
 		{
 			if (pItem && pItem->GetItemType() == Type && pItem->GetValue() > 0)
-			{
 				++count;
-			}
 		}
 		return count;
 	}
 
-	int GetItemPriority(EItemType Type, UInventoryComponent* Inventory, float CurrentStamina, float MaxStamina, int CurrentHealth)
+	int GetItemPriority(EItemType Type, UInventoryComponent* Inventory, float CurrentStamina, float MaxStamina, int CurrentHealth, int MaxHealth)
 	{
+		if (Type == EItemType::Garbage) return PRIORITY_SKIP;
+
 		const bool IS_WEAPON = (Type == EItemType::Pistol || Type == EItemType::Shotgun);
 
-		// Skip garbage
-		if (Type == EItemType::Garbage) return -1;
-
-		// Count how many of this type we already carry
-		int countOwned = CountItemsOfType(Inventory, Type);
-
-		// Weapons share the 2 weapons cap across both subtypes
 		if (IS_WEAPON)
 		{
 			int weaponCount = CountItemsOfType(Inventory, EItemType::Pistol) + CountItemsOfType(Inventory, EItemType::Shotgun);
-			if (weaponCount >= 2) return -1;
+			if (weaponCount >= 2) return PRIORITY_SKIP;
 		}
 		else
 		{
-			if (countOwned >= 2) return -1;
+			if (CountItemsOfType(Inventory, Type) >= 2) return PRIORITY_SKIP;
 		}
 
-		// Base scores
-		int score{};
+		const float staminaRatio = (MaxStamina > 0.f) ? (CurrentStamina / MaxStamina) : 1.f;
+		const float healthRatio = (MaxHealth > 0) ? ((float)CurrentHealth / (float)MaxHealth) : 1.f;
+		const bool  staminaLow = staminaRatio < STAMINA_LOW_THRESHOLD;
+		const bool  healthLow = healthRatio < HEALTH_LOW_THRESHOLD;
+
 		switch (Type)
 		{
-		case EItemType::Food:   score = 0; break;
-		case EItemType::Medkit: score = 1; break;
+		case EItemType::Food:
+			return staminaLow ? PRIORITY_URGENT : PRIORITY_HIGH;
+		case EItemType::Medkit:
+			return healthLow ? PRIORITY_URGENT : PRIORITY_MEDIUM;
 		case EItemType::Pistol:
-		case EItemType::Shotgun: score = 2; break;
-		default: return -1;
-		}
+		case EItemType::Shotgun:
+			return (staminaLow || healthLow) ? PRIORITY_HIGH : PRIORITY_LOW;
 
-		// Urgency overrides — swap food and medkit to the very front when critical
-		const float staminaRatio = (MaxStamina > 0.f) ? (CurrentStamina / MaxStamina) : 1.f;
-		const bool staminaLow = (staminaRatio < 0.75f);   // stamina < 7.5 on a 10-max scale
-		const bool healthLow = (CurrentHealth < 7);
-
-		if (Type == EItemType::Food && staminaLow)
-		{
-			score = -100;
+		default:
+			return PRIORITY_SKIP;
 		}
-			
-		if (Type == EItemType::Medkit && healthLow)
-		{
-			score = (staminaLow ? -99 : -100); // food still wins if both are critical
-		}
-
-		return score;
 	}
 }
 // ---------------------------------------------------------------------------
@@ -81,8 +74,7 @@ namespace GameAI::BT
 {
 	LootAction_PetrovaIva::LootAction_PetrovaIva(UStudentPerceptor_PetrovaIva* Perceptor)
 		: m_pPerceptor(Perceptor)
-	{
-	}
+	{}
 
 	void LootAction_PetrovaIva::OnEnter(ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard)
 	{
@@ -105,7 +97,7 @@ namespace GameAI::BT
 		if (!m_pPerceptor) return ENodeStatus::Failed;
 
 		UInventoryComponent* pInventory = Survivor.GetComponentByClass<UInventoryComponent>();
-		if (!pInventory)return ENodeStatus::Failed;
+		if (!pInventory) return ENodeStatus::Failed;
 
 		int emptySlot = FindEmptySlot(pInventory);
 		if (emptySlot < 0) return ENodeStatus::Failed;
@@ -133,10 +125,7 @@ namespace GameAI::BT
 			for (ABaseItem* pItem : perceivedItems)
 			{
 				if (IsValid(pItem) && pItem->GetValue() > 0 && !m_BlacklistedItems.Contains(pItem))
-				{
 					++availableCount;
-				}
-
 			}
 
 			// If every perceived item is blacklisted, clear the blacklist and retry
@@ -144,21 +133,21 @@ namespace GameAI::BT
 			{
 				m_BlacklistedItems.Empty();
 
-				// Re-check after clearing
 				for (ABaseItem* pItem : perceivedItems)
 				{
 					if (IsValid(pItem) && pItem->GetValue() > 0)
-					{
 						++availableCount;
-					}
 				}
 
 				if (availableCount == 0) return ENodeStatus::Failed;
 			}
 
 			// Gather survivor stats needed for priority scoring
-			float currentStamina = 0.f, maxStamina = 1.f;
-			int currentHealth = 10;
+			float currentStamina{ 0.f };
+			float maxStamina{ 1.f };
+			int currentHealth{ 10 };
+			int maxHealth{10};
+
 			if (UStaminaComponent* pStamina = Survivor.GetComponentByClass<UStaminaComponent>())
 			{
 				currentStamina = pStamina->GetCurrentStamina();
@@ -167,19 +156,22 @@ namespace GameAI::BT
 			if (UHealthComponent* pHealth = Survivor.GetComponentByClass<UHealthComponent>())
 			{
 				currentHealth = pHealth->GetHealth();
+				maxHealth = pHealth->GetMaxHealth();
 			}
 
 			// Pick the highest-priority non-blacklisted perceived item;
-			// break ties by distance (closest wins within the same priority tier)
-			int   bestPriority = INT_MAX;
-			float bestDistSq = FLT_MAX;
+			int bestPriority {INT_MAX};
+			float bestDistSq{ FLT_MAX };
+
 			for (ABaseItem* pItem : perceivedItems)
 			{
 				if (!IsValid(pItem) || pItem->GetValue() <= 0) continue;
 				if (m_BlacklistedItems.Contains(pItem)) continue;
 
-				int priority = GetItemPriority(pItem->GetItemType(), pInventory, currentStamina, maxStamina, currentHealth);
-				if (priority < 0) continue; // skip unwanted types
+				int priority = GetItemPriority(pItem->GetItemType(), pInventory, currentStamina, maxStamina, currentHealth, maxHealth);
+
+				// skip unwanted types
+				if (priority < 0) continue; 
 
 				float distSq = FVector::DistSquared(Survivor.GetActorLocation(), pItem->GetActorLocation());
 
@@ -209,7 +201,7 @@ namespace GameAI::BT
 			return ENodeStatus::Failed;
 		}
 
-		// Steer toward item with Arrive (pre-scaled velocity, no MaxSpeed mutation)
+		// Steer toward item with Arrive
 		FVector itemPos = m_pTargetItem->GetActorLocation();
 		FTargetData itemTarget{};
 		itemTarget.Position = FVector2D(itemPos.X, itemPos.Y);

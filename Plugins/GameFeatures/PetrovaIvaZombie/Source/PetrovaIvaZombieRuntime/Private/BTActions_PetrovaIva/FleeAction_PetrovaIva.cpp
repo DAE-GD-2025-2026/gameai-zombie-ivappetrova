@@ -83,8 +83,9 @@ namespace GameAI::BT
 		if (!anyInRange) return ENodeStatus::Succeeded;
 		if (closestDist >= m_SafeDistance) return ENodeStatus::Succeeded;
 
-		// Stuck detection — rotate escape direction in 75° steps when not moving
+		// Stuck detection
 		m_StuckTimer += DeltaTime;
+
 		if (m_StuckTimer >= STUCK_TIME_THRESHOLD)
 		{
 			float distMoved = FVector::Dist(Survivor.GetActorLocation(), m_LastPosition);
@@ -115,11 +116,10 @@ namespace GameAI::BT
 			dir = Survivor.GetActorRightVector();
 		}
 
-		float angleDeg = m_EscapeAngleStep * 75.f;
+		float angleDeg { m_EscapeAngleStep * 75.f };
 		dir = dir.RotateAngleAxis(angleDeg, FVector::UpVector);
 
 		Survivor.AddMovementInput(dir.GetSafeNormal());
-
 		return ENodeStatus::Running;
 	}
 

@@ -21,7 +21,7 @@
 
 UStudentPerceptor_PetrovaIva::UStudentPerceptor_PetrovaIva()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
 }
 
 void UStudentPerceptor_PetrovaIva::BeginPlay()
@@ -59,20 +59,25 @@ void UStudentPerceptor_PetrovaIva::BeginPlay()
 		}, 0.5f, true);
 }
 
+void UStudentPerceptor_PetrovaIva::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	float worldTime = GetWorld()->GetTimeSeconds();
+	GEngine->AddOnScreenDebugMessage(99, 0.f, FColor::Yellow, FString::Printf(TEXT("Game Time: %02d:%02d"), (int)worldTime / 60, (int)worldTime % 60));
+}
+
 void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, USurvivorBTComponent_PetrovaIva* BTComp)
 {
 	using namespace GameAI::BT;
 
-	// ---- Blackboard query helpers ----
+	// Blackboard query helpers
 
-	auto GetHealth = [Survivor]() -> UHealthComponent*
-		{ return Survivor ? Survivor->GetComponentByClass<UHealthComponent>() : nullptr; };
+	auto GetHealth = [Survivor]() -> UHealthComponent* { return Survivor ? Survivor->GetComponentByClass<UHealthComponent>() : nullptr; };
 
-	auto GetInventory = [Survivor]() -> UInventoryComponent*
-		{ return Survivor ? Survivor->GetComponentByClass<UInventoryComponent>() : nullptr; };
+	auto GetInventory = [Survivor]() -> UInventoryComponent* { return Survivor ? Survivor->GetComponentByClass<UInventoryComponent>() : nullptr; };
 
-	auto GetStamina = [Survivor]() -> UStaminaComponent*
-		{ return Survivor ? Survivor->GetComponentByClass<UStaminaComponent>() : nullptr; };
+	auto GetStamina = [Survivor]() -> UStaminaComponent* { return Survivor ? Survivor->GetComponentByClass<UStaminaComponent>() : nullptr; };
 
 	auto HasItemOfType = [GetInventory](EItemType Type) -> bool
 		{
@@ -154,7 +159,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 	auto Root = std::make_unique<Selector>();
 
 	//////////////////////////////////////////////////////////////////////////////// Branch -1: Death guard
-	Root->AddChild(std::make_unique<Condition>([GetHealth, GetStamina, Survivor, BTComp]()
+	Root->AddChild(std::make_unique<Condition>([GetHealth, GetStamina, Survivor, BTComp, this]() 
 		{
 			UHealthComponent* pHealth = GetHealth();
 			UStaminaComponent* pStamina = GetStamina();
@@ -164,7 +169,10 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 
 			if (HEALTH_DEAD || STAMINA_DEAD)
 			{
+				float worldTime = GetWorld()->GetTimeSeconds();
 				UE_LOG(LogTemp, Warning, TEXT("Survivor is dead — movement disabled."));
+				UE_LOG(LogTemp, Warning, TEXT("Time survived: %02d:%02d"), (int)worldTime / 60, (int)worldTime % 60); 
+
 				if (BTComp) BTComp->StopLogic(TEXT("Dead"));
 				if (Survivor)
 				{
@@ -197,7 +205,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 2: Heal — medkit fits without overflowing max health
+	////////////////////////////////////////////////////////////////////////////// Branch 2: Heal
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([GetHealth, GetInventory]()
@@ -225,7 +233,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 3: Eat — food fits without overflowing max stamina
+	////////////////////////////////////////////////////////////////////////////// Branch 3: Eat
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([GetStamina, GetInventory]()
@@ -253,7 +261,27 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 4: Flee — zombie nearby, no weapon
+	////////////////////////////////////////////////////////////////////////////// Branch 4: Loot— low HP or stamina, prioritize over fleeing
+	{
+		auto seq = std::make_unique<Sequence>();
+		seq->AddChild(std::make_unique<Condition>([GetHealth, GetStamina]()
+			{
+				UHealthComponent* pHealth = GetHealth();
+				UStaminaComponent* pStamina = GetStamina();
+				if (!pHealth || !pStamina) return false;
+
+				float healthRatio = (float)pHealth->GetHealth() / (float)pHealth->GetMaxHealth();
+				float staminaRatio = pStamina->GetCurrentStamina() / pStamina->GetMaxStamina();
+
+				return healthRatio < 0.5f || staminaRatio < 0.5f;
+			}));
+		seq->AddChild(std::make_unique<Condition>([InventoryFull]()
+			{ return !InventoryFull(); }));
+		seq->AddChild(std::make_unique<LootAction_PetrovaIva>(this));
+		Root->AddChild(std::move(seq));
+	}
+
+	////////////////////////////////////////////////////////////////////////////// Branch 5: Flee — zombie nearby, no weapon
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
@@ -273,16 +301,16 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 					FHouseBounds bounds = pHouse->GetBounds();
 					FBox box(bounds.Origin - bounds.Extent * 0.8f, bounds.Origin + bounds.Extent * 0.8f);
 					// inside = block flee
-					if (box.IsInside(survivorPos)) return false; 
+					if (box.IsInside(survivorPos)) return false;
 				}
 				// not inside any house = allow flee
-				return true; 
+				return true;
 			}));
 		seq->AddChild(std::make_unique<FleeAction_PetrovaIva>(1200.f, 1800.f, this));
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 5: Fight — zombie nearby, has weapon
+	////////////////////////////////////////////////////////////////////////////// Branch 6: Fight— zombie nearby, has weapon
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
@@ -291,7 +319,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 6: Loot — inventory not full
+	////////////////////////////////////////////////////////////////////////////// Branch 7: Loot— inventory not full
 	{
 		auto seq = std::make_unique<Sequence>();
 		seq->AddChild(std::make_unique<Condition>([InventoryFull]()
@@ -300,7 +328,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 7: Explore
+	////////////////////////////////////////////////////////////////////////////// Branch 8: Explore
 	Root->AddChild(std::make_unique<ExploreAction_PetrovaIva>());
 
 	BTComp->SetRoot(std::move(Root));
