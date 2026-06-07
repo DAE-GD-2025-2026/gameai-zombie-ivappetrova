@@ -29,6 +29,10 @@ namespace GameAI::BT
 	void FleeAction_PetrovaIva::OnEnter(ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard)
 	{
 		m_IsMoving = false;
+		m_LastPosition = Survivor.GetActorLocation();
+		m_StuckTimer = 0.f;
+		m_EscapeAngleStep = 0;
+		m_TotalStuckTime = 0.f;
 		Survivor.StartRunning();
 	}
 
@@ -79,7 +83,41 @@ namespace GameAI::BT
 		if (!anyInRange) return ENodeStatus::Succeeded;
 		if (closestDist >= m_SafeDistance) return ENodeStatus::Succeeded;
 
+		// Stuck detection — rotate escape direction in 75° steps when not moving
+		m_StuckTimer += DeltaTime;
+		if (m_StuckTimer >= STUCK_TIME_THRESHOLD)
+		{
+			float distMoved = FVector::Dist(Survivor.GetActorLocation(), m_LastPosition);
+			m_LastPosition = Survivor.GetActorLocation();
+			m_StuckTimer = 0.f;
+
+			if (distMoved < STUCK_DIST_THRESHOLD)
+				m_EscapeAngleStep++;
+			else
+				m_EscapeAngleStep = 0;
+		}
+
+		// Hard cap — if rotating hasn't helped after MAX_TOTAL_STUCK_TIME, give up
+		if (m_EscapeAngleStep > 0)
+		{
+			m_TotalStuckTime += DeltaTime;
+			if (m_TotalStuckTime >= MAX_TOTAL_STUCK_TIME)
+				return ENodeStatus::Failed;
+		}
+		else
+		{
+			m_TotalStuckTime = 0.f;
+		}
+
 		FVector dir(aggregateFleeVec.X, aggregateFleeVec.Y, 0.f);
+		if (dir.SizeSquared() < 0.01f)
+		{
+			dir = Survivor.GetActorRightVector();
+		}
+
+		float angleDeg = m_EscapeAngleStep * 75.f;
+		dir = dir.RotateAngleAxis(angleDeg, FVector::UpVector);
+
 		Survivor.AddMovementInput(dir.GetSafeNormal());
 
 		return ENodeStatus::Running;
@@ -88,6 +126,7 @@ namespace GameAI::BT
 	void FleeAction_PetrovaIva::OnExit(ASurvivorPawn& Survivor, UBlackboardComponent* Blackboard)
 	{
 		m_IsMoving = false;
+		m_TotalStuckTime = 0.f;
 		Survivor.StopRunning();
 	}
 }

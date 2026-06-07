@@ -9,7 +9,6 @@
 #include "Items/BaseItem.h"
 #include "Items/ItemType.h"
 #include "BTActions_PetrovaIva/PurgeZoneAction_PetrovaIva.h"
-#include "BTActions_PetrovaIva/HideAction_PetrovaIva.h"
 #include "BTActions_PetrovaIva/FleeAction_PetrovaIva.h"
 #include "BTActions_PetrovaIva/FightAction_PetrovaIva.h"
 #include "BTActions_PetrovaIva/UseItemAction_PetrovaIva.h"
@@ -172,7 +171,7 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 			return false;
 		}));
 
-	////////////////////////////////////////////////////////////////////////////// Branch 0: Garbage cleanup (always fails so Selector continues)
+	////////////////////////////////////////////////////////////////////////////// Branch 0: Garbage cleanup
 	Root->AddChild(std::make_unique<Condition>([CleanInventory]()
 		{
 			CleanInventory();
@@ -246,17 +245,17 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 		Root->AddChild(std::move(seq));
 	}
 
-	////////////////////////////////////////////////////////////////////////////// Branch 4: Hide — zombie nearby, no weapon, but a house is in sight
-	{
-		auto seq = std::make_unique<Sequence>();
-		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
-		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
-			{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
-		seq->AddChild(std::make_unique<Condition>([this]()
-			{ return !GetPerceivedHouses().IsEmpty(); }));
-		seq->AddChild(std::make_unique<HideAction_PetrovaIva>(this));
-		Root->AddChild(std::move(seq));
-	}
+	//////////////////////////////////////////////////////////////////////////////// Branch 4: Hide — zombie nearby, no weapon, but a house is in sight
+	//{
+	//	auto seq = std::make_unique<Sequence>();
+	//	seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
+	//	seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
+	//		{ return !HasItemOfType(EItemType::Pistol) && !HasItemOfType(EItemType::Shotgun); }));
+	//	seq->AddChild(std::make_unique<Condition>([this]()
+	//		{ return !GetPerceivedHouses().IsEmpty(); }));
+	//	seq->AddChild(std::make_unique<HideAction_PetrovaIva>(this));
+	//	Root->AddChild(std::move(seq));
+	//}
 
 	////////////////////////////////////////////////////////////////////////////// Branch 5: Flee — zombie nearby, no weapon
 	{
@@ -271,7 +270,6 @@ void UStudentPerceptor_PetrovaIva::BuildBehaviorTree(ASurvivorPawn* Survivor, US
 	////////////////////////////////////////////////////////////////////////////// Branch 6: Fight — zombie nearby, has weapon
 	{
 		auto seq = std::make_unique<Sequence>();
-		seq->AddChild(std::make_unique<Condition>([this]() { return HasNearbyZombie(); }));
 		seq->AddChild(std::make_unique<Condition>([HasItemOfType]()
 			{ return HasItemOfType(EItemType::Pistol) || HasItemOfType(EItemType::Shotgun); }));
 		seq->AddChild(std::make_unique<FightAction_PetrovaIva>(600.f));

@@ -23,7 +23,16 @@ namespace GameAI::BT
 		bool m_IsMoving{ false };
 		UStudentPerceptor_PetrovaIva* m_pPerceptor{ nullptr };
 
+		FVector m_LastPosition{ FVector::ZeroVector };
+		float m_StuckTimer{ 0.f };
+		int32 m_EscapeAngleStep{ 0 };
+		float m_TotalStuckTime{ 0.f };
+
+		static constexpr float STUCK_TIME_THRESHOLD{ 1.0f };
+		static constexpr float STUCK_DIST_THRESHOLD{ 30.f };
+		static constexpr float MAX_TOTAL_STUCK_TIME{ 6.f };
+
 		// Evade predicts where the zombie will be and steers away from that point
-		Evade  m_EvadeSteering{};
+		Evade m_EvadeSteering{};
 	};
 }
