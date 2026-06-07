@@ -11,7 +11,8 @@ public class PetrovaIvaZombieRuntime : ModuleRules
 		PublicIncludePaths.AddRange(
 			new string[] {
 				// ... add public include paths required here ...
-			}
+                "PetrovaIvaZombieRuntime"
+            }
 			);
 				
 		
@@ -25,8 +26,9 @@ public class PetrovaIvaZombieRuntime : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core",
-				// ... add other public dependencies that you statically link with here ...
+                "Core",
+                "GameAI_Zombie",
+                // ... add other public dependencies that you statically link with here ...
 			}
 			);
 			
@@ -38,7 +40,8 @@ public class PetrovaIvaZombieRuntime : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
-                "AIModule"
+                "AIModule",
+                "NavigationSystem",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
